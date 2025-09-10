@@ -767,27 +767,65 @@ const ALL_SOP_CLASSES: &[SopClassInfo] = &[
 
 /// Helper function to get a default transfer syntax list for any SOP class
 pub fn get_default_transfer_syntaxes() -> Vec<&'static str> {
-    vec![
-        "1.2.840.10008.1.2.1", // Explicit VR Little Endian
-        "1.2.840.10008.1.2",   // Implicit VR Little Endian
-    ]
+    crate::transfer_syntaxes::get_basic_transfer_syntaxes()
 }
 
-/// Helper function to get extended transfer syntax list for enhanced SOP classes
+/// Helper function to get lossless transfer syntax list for medical imaging
+pub fn get_lossless_transfer_syntaxes() -> Vec<&'static str> {
+    crate::transfer_syntaxes::get_lossless_transfer_syntaxes()
+}
+
+/// Helper function to get comprehensive transfer syntax list including compressed formats
+pub fn get_comprehensive_transfer_syntaxes() -> Vec<&'static str> {
+    crate::transfer_syntaxes::get_comprehensive_transfer_syntaxes()
+}
+
+/// Get appropriate transfer syntaxes based on SOP class category
+pub fn get_transfer_syntaxes_for_category(category: &SopClassCategory) -> Vec<&'static str> {
+    match category {
+        // Core imaging modalities benefit from comprehensive support including compression
+        SopClassCategory::ComputedTomography |
+        SopClassCategory::MagneticResonance |
+        SopClassCategory::DigitalRadiography |
+        SopClassCategory::DigitalMammography => {
+            crate::transfer_syntaxes::get_compressed_transfer_syntaxes()
+        }
+        
+        // Enhanced formats should support all modern transfer syntaxes
+        SopClassCategory::Enhanced => {
+            crate::transfer_syntaxes::get_comprehensive_transfer_syntaxes()
+        }
+        
+        // Waveforms and raw data typically use lossless compression
+        SopClassCategory::Waveform |
+        SopClassCategory::RawData => {
+            crate::transfer_syntaxes::get_lossless_transfer_syntaxes()
+        }
+        
+        // Video applications need video transfer syntaxes
+        SopClassCategory::Endoscopy |
+        SopClassCategory::Microscopy => {
+            let mut syntaxes = crate::transfer_syntaxes::get_compressed_transfer_syntaxes();
+            syntaxes.extend(crate::transfer_syntaxes::get_video_transfer_syntaxes());
+            syntaxes
+        }
+        
+        // Legacy formats stick to basic transfer syntaxes for compatibility
+        SopClassCategory::Legacy => {
+            crate::transfer_syntaxes::get_basic_transfer_syntaxes()
+        }
+        
+        // All others get lossless by default (conservative approach)
+        _ => {
+            crate::transfer_syntaxes::get_lossless_transfer_syntaxes()
+        }
+    }
+}
+
+/// Helper function to get extended transfer syntax list for enhanced SOP classes (deprecated - use get_comprehensive_transfer_syntaxes)
+#[deprecated(note = "Use get_comprehensive_transfer_syntaxes() instead")]
 pub fn get_extended_transfer_syntaxes() -> Vec<&'static str> {
-    vec![
-        "1.2.840.10008.1.2.1",   // Explicit VR Little Endian
-        "1.2.840.10008.1.2",     // Implicit VR Little Endian
-        "1.2.840.10008.1.2.2",   // Explicit VR Big Endian
-        "1.2.840.10008.1.2.4.50", // JPEG Baseline (Process 1)
-        "1.2.840.10008.1.2.4.51", // JPEG Extended (Process 2 & 4)
-        "1.2.840.10008.1.2.4.70", // JPEG Lossless, Non-Hierarchical (Process 14)
-        "1.2.840.10008.1.2.4.80", // JPEG-LS Lossless Image Compression
-        "1.2.840.10008.1.2.4.81", // JPEG-LS Lossy (Near-Lossless) Image Compression
-        "1.2.840.10008.1.2.4.90", // JPEG 2000 Image Compression (Lossless Only)
-        "1.2.840.10008.1.2.4.91", // JPEG 2000 Image Compression
-        "1.2.840.10008.1.2.5",    // RLE Lossless
-    ]
+    get_comprehensive_transfer_syntaxes()
 }
 
 #[cfg(test)]

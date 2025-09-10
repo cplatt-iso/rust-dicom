@@ -8,7 +8,8 @@ use tracing::{debug, error, info, warn};
 use smallvec::smallvec;
 
 use crate::types::{DicomFile, TransferStats};
-use crate::sop_classes::{SopClassRegistry, get_default_transfer_syntaxes};
+use crate::sop_classes::{SopClassRegistry, get_default_transfer_syntaxes, get_transfer_syntaxes_for_category};
+use crate::transfer_syntaxes::TransferSyntaxRegistry;
 
 #[derive(Debug, Clone)]
 pub struct DicomClientConfig {
@@ -72,29 +73,37 @@ impl DicomClient {
             .called_ae_title(&config.called_ae)
             .max_pdu_length(65536); // Increase PDU size to handle larger files
 
-        // Initialize SOP class registry
+        // Initialize SOP class registry and transfer syntax registry
         let sop_registry = SopClassRegistry::new();
-        let default_transfer_syntaxes = get_default_transfer_syntaxes();
+        let ts_registry = TransferSyntaxRegistry::new();
         
-        info!("Registering comprehensive SOP class support...");
+        info!("Registering comprehensive SOP class and transfer syntax support...");
         
-        // Add presentation contexts for all supported SOP classes
+        // Add presentation contexts for all supported SOP classes with intelligent TS selection
         let all_sop_uids = sop_registry.get_all_uids();
-        info!("Adding {} SOP classes to association request", all_sop_uids.len());
+        info!("Adding {} SOP classes with smart transfer syntax selection", all_sop_uids.len());
         
         // Store mapping of presentation context ID to SOP class UID for later reference
-        let mut sop_uid_mapping = std::collections::HashMap::new();
+        let mut sop_uid_mapping = HashMap::new();
         let mut context_id = 1u8;
         
         for sop_uid in all_sop_uids {
             if let Some(sop_info) = sop_registry.get(sop_uid) {
-                debug!("Adding SOP class: {} ({})", sop_info.name, sop_uid);
+                // Select appropriate transfer syntaxes based on SOP class category
+                let transfer_syntaxes = get_transfer_syntaxes_for_category(&sop_info.category);
+                
+                debug!("Adding SOP class: {} ({}) with {} transfer syntaxes", 
+                       sop_info.name, sop_uid, transfer_syntaxes.len());
+                       
                 association_options = association_options
-                    .with_presentation_context(sop_uid, default_transfer_syntaxes.clone());
+                    .with_presentation_context(sop_uid, transfer_syntaxes);
                 sop_uid_mapping.insert(context_id, sop_uid);
                 context_id += 1;
             }
         }
+        
+        info!("Transfer syntax coverage: {} unique transfer syntaxes available", 
+              ts_registry.get_all_uids().len());
 
         // Establish the association
         let mut association = association_options
@@ -242,13 +251,83 @@ impl DicomClient {
         // Prepare the dataset for transmission using the negotiated transfer syntax
         let mut dataset_buffer = Vec::new();
         
-        // Use the appropriate transfer syntax based on what was negotiated
-        let ts_to_use = if transfer_syntax == "1.2.840.10008.1.2.1" {
-            // Explicit VR Little Endian
-            &dicom_transfer_syntax_registry::entries::EXPLICIT_VR_LITTLE_ENDIAN.erased()
-        } else {
-            // Default to Implicit VR Little Endian
-            &dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased()
+        // Map the negotiated transfer syntax UID to the appropriate registry entry
+        let ts_registry = TransferSyntaxRegistry::new();
+        let ts_to_use = match transfer_syntax.as_str() {
+            // Uncompressed transfer syntaxes
+            "1.2.840.10008.1.2" => {
+                info!("Using Implicit VR Little Endian");
+                &dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased()
+            }
+            "1.2.840.10008.1.2.1" => {
+                info!("Using Explicit VR Little Endian");
+                &dicom_transfer_syntax_registry::entries::EXPLICIT_VR_LITTLE_ENDIAN.erased()
+            }
+            "1.2.840.10008.1.2.2" => {
+                info!("Using Explicit VR Big Endian (Legacy)");
+                // Note: Big Endian support may be limited in some implementations
+                &dicom_transfer_syntax_registry::entries::EXPLICIT_VR_BIG_ENDIAN.erased()
+            }
+            
+            // JPEG Baseline and Extended
+            "1.2.840.10008.1.2.4.50" => {
+                info!("Using JPEG Baseline (Process 1)");
+                // For JPEG, we need to handle encapsulated pixel data
+                &dicom_transfer_syntax_registry::entries::EXPLICIT_VR_LITTLE_ENDIAN.erased()
+            }
+            "1.2.840.10008.1.2.4.51" => {
+                info!("Using JPEG Extended (Process 2 & 4)");
+                &dicom_transfer_syntax_registry::entries::EXPLICIT_VR_LITTLE_ENDIAN.erased()
+            }
+            
+            // JPEG Lossless
+            "1.2.840.10008.1.2.4.57" | "1.2.840.10008.1.2.4.70" => {
+                info!("Using JPEG Lossless");
+                &dicom_transfer_syntax_registry::entries::EXPLICIT_VR_LITTLE_ENDIAN.erased()
+            }
+            
+            // JPEG-LS
+            "1.2.840.10008.1.2.4.80" => {
+                info!("Using JPEG-LS Lossless");
+                &dicom_transfer_syntax_registry::entries::EXPLICIT_VR_LITTLE_ENDIAN.erased()
+            }
+            "1.2.840.10008.1.2.4.81" => {
+                info!("Using JPEG-LS Near-Lossless");
+                &dicom_transfer_syntax_registry::entries::EXPLICIT_VR_LITTLE_ENDIAN.erased()
+            }
+            
+            // JPEG 2000
+            "1.2.840.10008.1.2.4.90" => {
+                info!("Using JPEG 2000 Lossless");
+                &dicom_transfer_syntax_registry::entries::EXPLICIT_VR_LITTLE_ENDIAN.erased()
+            }
+            "1.2.840.10008.1.2.4.91" => {
+                info!("Using JPEG 2000");
+                &dicom_transfer_syntax_registry::entries::EXPLICIT_VR_LITTLE_ENDIAN.erased()
+            }
+            
+            // RLE Lossless
+            "1.2.840.10008.1.2.5" => {
+                info!("Using RLE Lossless");
+                &dicom_transfer_syntax_registry::entries::EXPLICIT_VR_LITTLE_ENDIAN.erased()
+            }
+            
+            // Default fallback for any other transfer syntax
+            _ => {
+                if let Some(ts_info) = ts_registry.get(&transfer_syntax) {
+                    warn!("Using fallback encoding for transfer syntax: {} ({})", 
+                          ts_info.name, transfer_syntax);
+                } else {
+                    warn!("Unknown transfer syntax: {}, using fallback", transfer_syntax);
+                }
+                
+                // For encapsulated formats, use explicit VR little endian as base encoding
+                if ts_registry.requires_encapsulation(&transfer_syntax) {
+                    &dicom_transfer_syntax_registry::entries::EXPLICIT_VR_LITTLE_ENDIAN.erased()
+                } else {
+                    &dicom_transfer_syntax_registry::entries::IMPLICIT_VR_LITTLE_ENDIAN.erased()
+                }
+            }
         };
         
         obj.write_dataset_with_ts(&mut dataset_buffer, ts_to_use)?;
