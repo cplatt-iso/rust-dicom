@@ -1,17 +1,19 @@
 # DICOM C-STORE Sender
 
-A high-performance, multi-threaded DICOM C-STORE client implementation written in Rust. This application provides reliable DICOM file transmission capabilities with support for concurrent transfers, proper DICOM protocol compliance, and comprehensive logging.
+A high-performance, multi-threaded DICOM C-STORE client implementation written in Rust. This application provides comprehensive DICOM file transmission capabilities with universal protocol support, featuring 117+ SOP classes and 47 transfer syntaxes for complete medical imaging compatibility.
 
 ## Overview
 
-This tool implements the DICOM C-STORE operation for sending DICOM files to PACS (Picture Archiving and Communication System) servers or other DICOM Storage Service Class Providers. It features intelligent study-based organization, concurrent processing, and robust error handling.
+This tool implements the DICOM C-STORE operation for sending DICOM files to PACS (Picture Archiving and Communication System) servers or other DICOM Storage Service Class Providers. It features intelligent study-based organization, concurrent processing, comprehensive protocol support, and robust error handling.
 
 ### Key Features
 
 - **DICOM Protocol Compliance**: Full implementation of DICOM Upper Layer Protocol and C-STORE operations
+- **Comprehensive SOP Class Support**: 117+ SOP classes covering all medical imaging modalities
+- **Universal Transfer Syntax Support**: 47 transfer syntaxes including modern compression (JPEG 2000, H.264/H.265)
+- **Smart Protocol Negotiation**: Intelligent transfer syntax selection based on SOP class categories
 - **Multi-threaded Processing**: Configurable concurrent transfers for improved performance
 - **Study-based Organization**: Automatically groups files by Study Instance UID for logical transfer batches
-- **Transfer Syntax Negotiation**: Supports Explicit VR Little Endian and Implicit VR Little Endian
 - **PDU Fragmentation**: Handles large DICOM files with proper PDU segmentation
 - **Comprehensive Logging**: Detailed session logs and JSON summaries for analysis
 - **Progress Monitoring**: Real-time progress indicators and transfer statistics
@@ -25,6 +27,10 @@ This tool implements the DICOM C-STORE operation for sending DICOM files to PACS
   - `dicom-ul`: DICOM Upper Layer Protocol implementation
   - `dicom-object`: DICOM object manipulation
   - `dicom-transfer-syntax-registry`: Transfer syntax support
+- **Protocol Support**: 
+  - 117+ SOP classes covering all medical imaging modalities
+  - 47 transfer syntaxes including modern compression (JPEG 2000, H.264/H.265)
+  - Smart protocol negotiation with category-based selection
 - **Networking**: TCP-based DICOM associations with proper state management
 - **Concurrency**: Tokio async runtime with multi-threaded execution
 - **CLI Framework**: Clap for command-line argument parsing
@@ -64,6 +70,12 @@ cargo build --release
 ```bash
 # Check that the application runs and displays help
 ./target/release/dicom-sender --help
+
+# View comprehensive SOP class support
+cargo run --bin show_sop_classes
+
+# View comprehensive transfer syntax support  
+cargo run --bin show_transfer_syntaxes
 ```
 
 ## Usage
@@ -132,23 +144,81 @@ Optional Arguments:
 
 The application implements the following DICOM protocol components:
 
-- **Association Establishment**: Proper A-ASSOCIATE-RQ/AC negotiation
-- **Presentation Contexts**: Support for multiple SOP Classes and Transfer Syntaxes
+- **Association Establishment**: Proper A-ASSOCIATE-RQ/AC negotiation with comprehensive SOP class support
+- **Presentation Contexts**: Support for 117+ SOP classes and 47 transfer syntaxes with intelligent selection
 - **C-STORE Operations**: Complete C-STORE-RQ/RSP implementation with dataset transfer
+- **Smart Protocol Negotiation**: Automatic transfer syntax selection based on SOP class categories
+- **Compression Support**: Modern compression including JPEG 2000, H.264/H.265, and lossless formats
 - **PDU Management**: Fragmentation and reassembly for large datasets
 - **Association Release**: Clean A-RELEASE-RQ/RP termination
 
 ### Supported SOP Classes
 
-- Secondary Capture Image Storage (1.2.840.10008.5.1.4.1.1.7)
-- CT Image Storage (1.2.840.10008.5.1.4.1.1.2)
-- MR Image Storage (1.2.840.10008.5.1.4.1.1.4)
-- Computed Radiography Image Storage (1.2.840.10008.5.1.4.1.1.1)
+Comprehensive support for 117+ SOP classes across all medical imaging domains:
+
+#### **Imaging Modalities (15 categories)**
+- **CT & Enhanced CT**: Standard and enhanced computed tomography
+- **MR & Enhanced MR**: Magnetic resonance imaging with advanced sequences
+- **Ultrasound**: 2D/3D ultrasound including enhanced formats
+- **Nuclear Medicine**: PET, SPECT, and molecular imaging
+- **X-Ray & Mammography**: Digital radiography and mammographic imaging
+- **Endoscopy & Microscopy**: Endoscopic and microscopic imaging
+- **Ophthalmology**: Retinal photography and optical coherence tomography
+
+#### **Structured Reporting (4 categories)**
+- **SR Documents**: Comprehensive structured reporting
+- **Key Object Selection**: Document and image references
+- **Presentation States**: Display settings and annotations
+
+#### **Specialized Formats (8 categories)**
+- **Waveforms**: ECG, EEG, and physiological data
+- **Radiation Therapy**: RT plans, structures, and dose data
+- **Video & Multi-frame**: Endoscopic video and time-series imaging
+- **Legacy & Secondary**: Historical formats and secondary captures
+
+*View complete SOP class registry with: `cargo run --bin show_sop_classes`*
 
 ### Transfer Syntaxes
 
+Comprehensive support for 47 transfer syntaxes covering all DICOM compression standards:
+
+#### **Uncompressed (2 syntaxes)**
 - Explicit VR Little Endian (1.2.840.10008.1.2.1)
 - Implicit VR Little Endian (1.2.840.10008.1.2)
+
+#### **Lossless Compressed (8 syntaxes)**
+- JPEG Lossless (Process 14)
+- JPEG-LS Lossless Image Compression
+- JPEG 2000 Image Compression (Lossless Only)
+- RLE Lossless
+- High-Throughput JPEG 2000 variants
+
+#### **Lossy Compressed (6 syntaxes)**
+- JPEG Baseline (Process 1)
+- JPEG Extended (Process 2 & 4)
+- JPEG-LS Lossy (Near-Lossless)
+- JPEG 2000 Image Compression
+
+#### **Video Transfer Syntaxes (12 syntaxes)**
+- MPEG2 Main Profile / Main Level
+- MPEG-4 AVC/H.264 High Profile variants
+- HEVC/H.265 Main Profile
+- SMPTE ST 2110 Uncompressed Video
+
+#### **Legacy Support (19 syntaxes)**
+- Explicit VR Big Endian (Retired)
+- Various retired JPEG processes
+- Historical compression formats
+
+#### **Smart Selection Algorithm**
+The system automatically selects optimal transfer syntaxes based on SOP class categories:
+- **CT Imaging**: 10 syntaxes optimized for volumetric data
+- **Enhanced Formats**: All 47 syntaxes for maximum compatibility
+- **Waveforms**: 6 lossless syntaxes for signal integrity
+- **Video/Endoscopy**: 22 syntaxes including modern video codecs
+- **Legacy Systems**: 2 basic syntaxes for backward compatibility
+
+*View complete transfer syntax registry with: `cargo run --bin show_transfer_syntaxes`*
 
 ### Processing Pipeline
 
@@ -174,6 +244,24 @@ This approach ensures:
 - Balanced workload distribution
 - Minimal association overhead
 - Optimal network utilization
+
+## Showcase Utilities
+
+The project includes comprehensive showcase utilities to demonstrate capabilities:
+
+### SOP Class Registry Showcase
+```bash
+# Display all 117+ supported SOP classes organized by category
+cargo run --bin show_sop_classes
+```
+Shows complete categorization of imaging modalities, structured reporting, waveforms, radiation therapy, and specialized formats.
+
+### Transfer Syntax Registry Showcase  
+```bash
+# Display all 47 supported transfer syntaxes with smart selection examples
+cargo run --bin show_transfer_syntaxes
+```
+Demonstrates uncompressed, lossless/lossy compressed, video, and legacy transfer syntaxes with intelligent category-based selection.
 
 ## Output and Logging
 
