@@ -1,0 +1,17 @@
+# Rust build artifacts
+/target
+
+# Logs and session output
+logs/
+*.log
+*.json
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
