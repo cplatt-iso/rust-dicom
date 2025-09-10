@@ -2,11 +2,13 @@ use anyhow::{Context, Result};
 use dicom_core::{Tag, DataElement, VR};
 use dicom_core::value::{Value, PrimitiveValue};
 use dicom_object::{open_file, InMemDicomObject};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 use smallvec::smallvec;
 
 use crate::types::{DicomFile, TransferStats};
+use crate::sop_classes::{SopClassRegistry, get_default_transfer_syntaxes};
 
 #[derive(Debug, Clone)]
 pub struct DicomClientConfig {
@@ -70,24 +72,29 @@ impl DicomClient {
             .called_ae_title(&config.called_ae)
             .max_pdu_length(65536); // Increase PDU size to handle larger files
 
-        // Add common presentation contexts
-        association_options = association_options
-            .with_presentation_context(
-                "1.2.840.10008.5.1.4.1.1.7", // Secondary Capture Image Storage
-                vec!["1.2.840.10008.1.2.1", "1.2.840.10008.1.2"], // Transfer syntaxes
-            )
-            .with_presentation_context(
-                "1.2.840.10008.5.1.4.1.1.2", // CT Image Storage
-                vec!["1.2.840.10008.1.2.1", "1.2.840.10008.1.2"],
-            )
-            .with_presentation_context(
-                "1.2.840.10008.5.1.4.1.1.4", // MR Image Storage
-                vec!["1.2.840.10008.1.2.1", "1.2.840.10008.1.2"],
-            )
-            .with_presentation_context(
-                "1.2.840.10008.5.1.4.1.1.1", // Computed Radiography Image Storage
-                vec!["1.2.840.10008.1.2.1", "1.2.840.10008.1.2"],
-            );
+        // Initialize SOP class registry
+        let sop_registry = SopClassRegistry::new();
+        let default_transfer_syntaxes = get_default_transfer_syntaxes();
+        
+        info!("Registering comprehensive SOP class support...");
+        
+        // Add presentation contexts for all supported SOP classes
+        let all_sop_uids = sop_registry.get_all_uids();
+        info!("Adding {} SOP classes to association request", all_sop_uids.len());
+        
+        // Store mapping of presentation context ID to SOP class UID for later reference
+        let mut sop_uid_mapping = std::collections::HashMap::new();
+        let mut context_id = 1u8;
+        
+        for sop_uid in all_sop_uids {
+            if let Some(sop_info) = sop_registry.get(sop_uid) {
+                debug!("Adding SOP class: {} ({})", sop_info.name, sop_uid);
+                association_options = association_options
+                    .with_presentation_context(sop_uid, default_transfer_syntaxes.clone());
+                sop_uid_mapping.insert(context_id, sop_uid);
+                context_id += 1;
+            }
+        }
 
         // Establish the association
         let mut association = association_options
@@ -96,17 +103,46 @@ impl DicomClient {
 
         info!("DICOM association established successfully");
         
-        // Debug: Check which presentation contexts were accepted
+        // Report which presentation contexts were accepted
+        let mut accepted_contexts = 0;
+        let mut rejected_contexts = 0;
+        
         for pc in association.presentation_contexts() {
-            info!("Presentation Context ID {}: reason={:?}, transfer_syntax={:?}", 
-                  pc.id, pc.reason, pc.transfer_syntax);
+            match pc.reason {
+                dicom_ul::pdu::PresentationContextResultReason::Acceptance => {
+                    accepted_contexts += 1;
+                    if let Some(&sop_uid) = sop_uid_mapping.get(&pc.id) {
+                        if let Some(sop_info) = sop_registry.get(sop_uid) {
+                            debug!("✓ Accepted: {} (ID={}, UID={})", sop_info.name, pc.id, sop_uid);
+                        } else {
+                            debug!("✓ Accepted: Unknown SOP Class (ID={}, UID={})", pc.id, sop_uid);
+                        }
+                    } else {
+                        debug!("✓ Accepted: Presentation Context ID={}", pc.id);
+                    }
+                }
+                _ => {
+                    rejected_contexts += 1;
+                    if let Some(&sop_uid) = sop_uid_mapping.get(&pc.id) {
+                        if let Some(sop_info) = sop_registry.get(sop_uid) {
+                            debug!("✗ Rejected: {} (ID={}, UID={})", sop_info.name, pc.id, sop_uid);
+                        } else {
+                            debug!("✗ Rejected: Unknown SOP Class (ID={}, UID={})", pc.id, sop_uid);
+                        }
+                    } else {
+                        debug!("✗ Rejected: Presentation Context ID={}", pc.id);
+                    }
+                }
+            }
         }
+        
+        info!("Presentation contexts: {} accepted, {} rejected", accepted_contexts, rejected_contexts);
 
         // Send each file
         for (idx, file) in files.iter().enumerate() {
             let file_start = Instant::now();
             
-            match Self::send_single_file_simple(&mut association, file, idx as u16 + 1) {
+            match Self::send_single_file_simple(&mut association, file, idx as u16 + 1, &sop_uid_mapping) {
                 Ok(bytes_sent) => {
                     let transfer_time = file_start.elapsed();
                     stats.successful_transfers += 1;
@@ -148,6 +184,7 @@ impl DicomClient {
         association: &mut dicom_ul::ClientAssociation<std::net::TcpStream>,
         file: &DicomFile,
         message_id: u16,
+        sop_uid_mapping: &HashMap<u8, &str>,
     ) -> Result<u64> {
         use dicom_ul::pdu::{Pdu, PDataValue, PDataValueType};
         
@@ -160,19 +197,40 @@ impl DicomClient {
             file.sop_class_uid, file.sop_instance_uid, message_id
         );
 
+        // Validate that this SOP class is in our registry
+        let sop_registry = SopClassRegistry::new();
+        if let Some(sop_info) = sop_registry.get(&file.sop_class_uid) {
+            debug!("SOP Class identified: {} (Category: {:?})", sop_info.name, sop_info.category);
+        } else {
+            warn!("Unknown SOP Class: {} - attempting transfer anyway", file.sop_class_uid);
+        }
+
         // Find the correct presentation context for this SOP class
         let mut presentation_context_id = None;
         let mut selected_transfer_syntax = None;
+        
+        // Look through all accepted presentation contexts to find one for this SOP class
         for pc in association.presentation_contexts() {
             if pc.reason == dicom_ul::pdu::PresentationContextResultReason::Acceptance {
-                presentation_context_id = Some(pc.id);
-                selected_transfer_syntax = Some(pc.transfer_syntax.clone());
-                break;
+                // Check if this presentation context matches our SOP class
+                if let Some(&sop_uid) = sop_uid_mapping.get(&pc.id) {
+                    if sop_uid == file.sop_class_uid {
+                        presentation_context_id = Some(pc.id);
+                        selected_transfer_syntax = Some(pc.transfer_syntax.clone());
+                        debug!("Found matching presentation context for SOP class {}: ID={}, Transfer Syntax={}", 
+                               file.sop_class_uid, pc.id, pc.transfer_syntax);
+                        break;
+                    }
+                }
             }
         }
         
         let presentation_context_id = presentation_context_id
-            .ok_or_else(|| anyhow::anyhow!("No accepted presentation contexts available"))?;
+            .ok_or_else(|| anyhow::anyhow!(
+                "No accepted presentation context found for SOP class: {} ({})", 
+                file.sop_class_uid,
+                sop_registry.get_name(&file.sop_class_uid).unwrap_or("Unknown")
+            ))?;
         
         let transfer_syntax = selected_transfer_syntax
             .ok_or_else(|| anyhow::anyhow!("No transfer syntax found for accepted presentation context"))?;

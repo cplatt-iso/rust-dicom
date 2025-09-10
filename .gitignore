@@ -1,8 +1,14 @@
 # Rust build artifacts
 /target
 
-# Logs and session output
+# Binary output
+/target/
+
+# Session logs and JSON summaries
 logs/
+
+# Test DICOM files (too large for GitHub)
+test-dicom/
 *.log
 *.json
 

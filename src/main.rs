@@ -1,5 +1,6 @@
 mod dicom_client;
 mod types;
+mod sop_classes;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
