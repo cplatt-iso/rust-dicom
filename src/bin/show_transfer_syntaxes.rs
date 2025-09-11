@@ -1,9 +1,22 @@
-use dicom_sender::transfer_syntaxes::{TransferSyntaxRegistry, TransferSyntaxCategory, CompressionType};
-use dicom_sender::sop_classes::{SopClassRegistry, get_transfer_syntaxes_for_category, SopClassCategory};
+use rust_dicom::common::transfer_syntaxes::{TransferSyntaxRegistry, TransferSyntaxCategory, CompressionType};
+use rust_dicom::common::sop_classes::{SopClassRegistry, get_transfer_syntaxes_for_category, SopClassCategory};
+use std::io::{self, Write};
 
 fn main() {
+    let result = run();
+    if let Err(e) = result {
+        if e.kind() == io::ErrorKind::BrokenPipe {
+            // Ignore broken pipe errors (e.g., when piped to `head`)
+            std::process::exit(0);
+        } else {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run() -> io::Result<()> {
     let ts_registry = TransferSyntaxRegistry::new();
-    let sop_registry = SopClassRegistry::new();
     
     println!("🚀 Comprehensive Transfer Syntax Support");
     println!("=====================================");
@@ -11,22 +24,20 @@ fn main() {
     println!();
     
     // Show transfer syntaxes by category
-    show_by_category(&ts_registry, TransferSyntaxCategory::Uncompressed, "📋 Uncompressed Transfer Syntaxes");
-    show_by_category(&ts_registry, TransferSyntaxCategory::LosslessCompressed, "🔒 Lossless Compressed Transfer Syntaxes");
-    show_by_category(&ts_registry, TransferSyntaxCategory::LossyCompressed, "📉 Lossy Compressed Transfer Syntaxes");
-    show_by_category(&ts_registry, TransferSyntaxCategory::Video, "🎬 Video Transfer Syntaxes");
-    show_by_category(&ts_registry, TransferSyntaxCategory::Legacy, "📜 Legacy Transfer Syntaxes");
+    show_by_category(&ts_registry, TransferSyntaxCategory::Uncompressed, "📋 Uncompressed Transfer Syntaxes")?;
+    show_by_category(&ts_registry, TransferSyntaxCategory::LosslessCompressed, "🔒 Lossless Compressed Transfer Syntaxes")?;
     
-    println!();
-    println!("🎯 Smart Transfer Syntax Selection Examples:");
-    println!("==========================================");
+    // Try to flush and catch potential broken pipe early
+    if let Err(e) = io::stdout().flush() {
+        if e.kind() == io::ErrorKind::BrokenPipe {
+            return Ok(());
+        }
+        return Err(e);
+    }
     
-    // Show examples of smart selection for different SOP class categories
-    show_smart_selection(&sop_registry, SopClassCategory::ComputedTomography, "CT Imaging");
-    show_smart_selection(&sop_registry, SopClassCategory::Enhanced, "Enhanced Formats");
-    show_smart_selection(&sop_registry, SopClassCategory::Waveform, "Waveforms");
-    show_smart_selection(&sop_registry, SopClassCategory::Endoscopy, "Endoscopy/Video");
-    show_smart_selection(&sop_registry, SopClassCategory::Legacy, "Legacy Formats");
+    show_by_category(&ts_registry, TransferSyntaxCategory::LossyCompressed, "📉 Lossy Compressed Transfer Syntaxes")?;
+    show_by_category(&ts_registry, TransferSyntaxCategory::Video, "🎬 Video Transfer Syntaxes")?;
+    show_by_category(&ts_registry, TransferSyntaxCategory::Legacy, "📜 Legacy Transfer Syntaxes")?;
     
     println!();
     println!("✨ Key Benefits:");
@@ -36,20 +47,22 @@ fn main() {
     println!("• Lossless preservation for critical imaging");
     println!("• Backward compatibility with legacy systems");
     println!("• Comprehensive coverage of all DICOM transfer syntaxes");
+    
+    io::stdout().flush()?;
+    Ok(())
 }
 
-fn show_by_category(registry: &TransferSyntaxRegistry, category: TransferSyntaxCategory, title: &str) {
+fn show_by_category(registry: &TransferSyntaxRegistry, category: TransferSyntaxCategory, title: &str) -> io::Result<()> {
     println!("{}", title);
     println!("{}", "=".repeat(title.len()));
     
     let syntaxes = registry.get_by_category(category);
     for ts in syntaxes.iter().take(8) { // Show first 8 to keep output manageable
-        let compression_info = match ts.compression {
-            CompressionType::None => "",
-            _ => &format!(" [{}]", format!("{:?}", ts.compression)),
-        };
-        
-        println!("• {}{}", ts.name, compression_info);
+        if matches!(ts.compression, CompressionType::None) {
+            println!("• {}", ts.name);
+        } else {
+            println!("• {} [{:?}]", ts.name, ts.compression);
+        }
     }
     
     if syntaxes.len() > 8 {
@@ -57,9 +70,13 @@ fn show_by_category(registry: &TransferSyntaxRegistry, category: TransferSyntaxC
     }
     
     println!();
+    
+    // Only flush once per category
+    io::stdout().flush()?;
+    Ok(())
 }
 
-fn show_smart_selection(sop_registry: &SopClassRegistry, category: SopClassCategory, name: &str) {
+fn show_smart_selection(sop_registry: &SopClassRegistry, category: SopClassCategory, name: &str) -> io::Result<()> {
     let transfer_syntaxes = get_transfer_syntaxes_for_category(&category);
     
     println!("📌 {} ({} transfer syntaxes):", name, transfer_syntaxes.len());
@@ -70,6 +87,7 @@ fn show_smart_selection(sop_registry: &SopClassRegistry, category: SopClassCateg
         if let Some(ts_info) = ts_registry.get(ts_uid) {
             println!("  • {}", ts_info.name);
             shown += 1;
+            io::stdout().flush()?;
         }
     }
     
@@ -78,4 +96,6 @@ fn show_smart_selection(sop_registry: &SopClassRegistry, category: SopClassCateg
     }
     
     println!();
+    io::stdout().flush()?;
+    Ok(())
 }

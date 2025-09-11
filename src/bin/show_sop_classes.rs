@@ -1,6 +1,20 @@
-use dicom_sender::sop_classes::SopClassRegistry;
+use rust_dicom::common::sop_classes::SopClassRegistry;
+use std::io::{self, Write};
 
 fn main() {
+    let result = run();
+    if let Err(e) = result {
+        if e.kind() == io::ErrorKind::BrokenPipe {
+            // Ignore broken pipe errors (e.g., when piped to `head`)
+            std::process::exit(0);
+        } else {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run() -> io::Result<()> {
     let registry = SopClassRegistry::new();
     let all_uids = registry.get_all_uids();
     
@@ -20,6 +34,8 @@ fn main() {
             println!("• {} ({:?})", info.name, info.category);
             count += 1;
         }
+        // Flush output and check for broken pipe
+        io::stdout().flush()?;
     }
     
     if all_uids.len() > 20 {
@@ -34,4 +50,7 @@ fn main() {
     println!("• Structured reporting and presentation states");
     println!("• Waveforms and raw data storage");
     println!("• Legacy and specialized SOP classes");
+    
+    io::stdout().flush()?;
+    Ok(())
 }

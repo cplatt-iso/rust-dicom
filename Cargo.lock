@@ -515,32 +515,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dicom-sender"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "console",
- "dicom",
- "dicom-core",
- "dicom-dictionary-std",
- "dicom-object",
- "dicom-transfer-syntax-registry",
- "dicom-ul",
- "indicatif",
- "serde",
- "serde_json",
- "smallvec",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "walkdir",
-]
-
-[[package]]
 name = "dicom-transfer-syntax-registry"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1623,6 +1597,32 @@ name = "rgb"
 version = "0.8.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c6a884d2998352bb4daf0183589aec883f16a6da1f4dde84d8e2e9a5409a1ce"
+
+[[package]]
+name = "rust-dicom"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "console",
+ "dicom",
+ "dicom-core",
+ "dicom-dictionary-std",
+ "dicom-object",
+ "dicom-transfer-syntax-registry",
+ "dicom-ul",
+ "indicatif",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "walkdir",
+]
 
 [[package]]
 name = "rustc-demangle"

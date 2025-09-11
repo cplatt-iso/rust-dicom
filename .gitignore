@@ -12,6 +12,10 @@ test-dicom/
 *.log
 *.json
 
+# Received DICOM files from receiver testing
+received_files/
+received/
+
 # IDE files
 .vscode/
 .idea/

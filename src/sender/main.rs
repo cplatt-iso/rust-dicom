@@ -1,25 +1,28 @@
-// Project reorganized: 
-// - Sender logic is now in src/sender/main.rs (binary: dicom-sender)
-// - Receiver logic is in src/receiver/main.rs (binary: dicom-receiver)  
-// - Shared code is in src/common/
-//
-// Use: 
-//   cargo run --bin dicom-sender -- [sender args]
-//   cargo run --bin dicom-receiver -- [receiver args]
+// Sender binary main
+mod dicom_client;
 
-fn main() {
-    println!("This project has been reorganized into separate sender and receiver binaries.");
-    println!("Use:");
-    println!("  cargo run --bin dicom-sender -- --help");
-    println!("  cargo run --bin dicom-receiver -- --help");
-}
+// Include common modules
+#[path = "../common/mod.rs"]
+mod common;
 
-fn main() {
-    println!("This project has been reorganized into separate sender and receiver binaries.");
-    println!("Use:");
-    println!("  cargo run --bin dicom-sender -- --help");
-    println!("  cargo run --bin dicom-receiver -- --help");
-}
+use anyhow::Result;
+use chrono::{DateTime, Utc};
+use clap::Parser;
+use console::{style, Emoji};
+use dicom::object::open_file;
+use dicom_core::header::Tag;
+use dicom_client::{DicomClient, DicomClientConfig};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+use tokio::task::JoinHandle;
+use tracing::{error, info, warn};
+use uuid::Uuid;
+use walkdir::WalkDir;
+
+use common::types::{DicomFile, SessionSummary, TransferResult, TransferStats};
 
 static SPARKLE: Emoji<'_, '_> = Emoji("✨ ", "");
 static ROCKET: Emoji<'_, '_> = Emoji("🚀 ", "");
@@ -324,12 +327,21 @@ async fn process_dicom_file(path: &Path) -> Result<Option<DicomFile>> {
                 .unwrap_or_else(|_| "UNKNOWN_SERIES".to_string());
 
             let sop_instance_uid = obj.element(Tag(0x0008, 0x0018))
-                .map(|e| e.string().unwrap_or_default().trim().to_string())
+                .map(|e| e.string().unwrap_or_default().trim().trim_end_matches('\0').to_string())
                 .unwrap_or_else(|_| "UNKNOWN_SOP_INSTANCE".to_string());
 
             let sop_class_uid = obj.element(Tag(0x0008, 0x0016))
-                .map(|e| e.string().unwrap_or_default().trim().to_string())
+                .map(|e| e.string().unwrap_or_default().trim().trim_end_matches('\0').to_string())
                 .unwrap_or_else(|_| "UNKNOWN_SOP_CLASS".to_string());
+            
+            // Debug: Print SOP class details
+            if let Ok(element) = obj.element(Tag(0x0008, 0x0016)) {
+                if let Ok(raw_string) = element.string() {
+                    println!("DEBUG: Raw SOP Class: '{}'", raw_string);
+                    println!("DEBUG: Trimmed SOP Class: '{}'", raw_string.trim());
+                    println!("DEBUG: Length: {}", raw_string.len());
+                }
+            }
 
             let modality = obj.element(Tag(0x0008, 0x0060))
                 .ok()

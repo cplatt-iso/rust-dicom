@@ -1,7 +1,15 @@
 [package]
-name = "dicom-sender"
+name = "rust-dicom"
 version = "0.1.0"
 edition = "2021"
+
+[[bin]]
+name = "dicom-sender"
+path = "src/sender/main.rs"
+
+[[bin]]
+name = "dicom-receiver"
+path = "src/receiver/main.rs"
 
 [dependencies]
 dicom = "0.8"
